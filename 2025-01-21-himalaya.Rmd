@@ -1,0 +1,84 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r include=FALSE}
+library(tidyverse)
+library(rethinking)
+library(conflicted)
+library(tidytuesdayR)
+
+```
+
+### Let's take a look at the data.
+
+```{r include= FALSE}
+
+him <- tt_load(2025, week = 3)
+exped <- him$exped_tidy
+peaks <- him$peaks_tidy
+
+# make any modifications to the dataset here.
+peaks <- peaks %>% 
+  mutate(
+    pstatus = PSTATUS_FACTOR,
+    himal_range  = HIMAL_FACTOR,
+    peak_height = HEIGHTM,
+    open = OPEN
+    
+  )
+
+
+```
+
+#### What is the distribution of climbing status across different mountains ranges?
+```{r}
+peaks %>% 
+  group_by(pstatus, himal_range) %>% 
+  summarize(count = n()) %>% 
+  pivot_wider(
+    names_from = pstatus,
+    values_from  = count
+  ) %>% 
+  mutate(
+    total = Climbed + Unclimbed,
+    climbed_prop = Climbed/total,
+    himal_range = fct_reorder(himal_range, climbed_prop)
+  ) %>% 
+  arrange(desc(climbed_prop)) %>% 
+  ggplot(aes(himal_range, climbed_prop))+
+  geom_col()+
+  coord_flip()+
+  labs(x = "Mountain Ranges",
+       y = "Climbed/Total Expeditions",
+       title = "Distribution of climbing status across different mountain ranges.")
+
+```
+
+#### Which mountain range has the highest average peak height?
+
+```{r}
+
+peaks %>% 
+  group_by(himal_range) %>% 
+  summarize(
+    avg_peak_height = mean(peak_height)
+  )
+```
+
+#### Distribution of peak heights for peaks that are closed vs those that are open.
+
+```{r}
+peaks %>% 
+ group_by(open) %>% 
+ ggplot() +
+  geom_density(aes(peak_height, col = open))+
+  labs(
+    title = "Distribution of peak heights by the open/closed status",
+    x = "Peak height",
+    y  = "Density"
+  )+
+  theme_minimal()
+```
+
