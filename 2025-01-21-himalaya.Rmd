@@ -1,0 +1,180 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r include=FALSE}
+library(tidyverse)
+library(rethinking)
+library(conflicted)
+library(tidytuesdayR)
+
+```
+
+### Let's take a look at the data.
+
+```{r include= FALSE}
+
+him <- tt_load(2025, week = 3)
+exped <- him$exped_tidy
+peaks <- him$peaks_tidy
+
+# make any modifications to the dataset here.
+peaks <- peaks %>% 
+  mutate(
+    pstatus = PSTATUS_FACTOR,
+    himal_range  = HIMAL_FACTOR,
+    peak_height = HEIGHTM,
+    open = OPEN
+    
+  )
+
+exped <- exped %>% 
+  rename(route1 = ROUTE1,
+         route2 = ROUTE2,
+         route3 = ROUTE3,
+         route4 = ROUTE4,
+         )
+
+exped <- exped %>% 
+  rename(
+    success1 = SUCCESS1,
+    success2 = SUCCESS2,
+    success3 = SUCCESS3,
+    success4 = SUCCESS4
+  )
+
+exped <- exped %>% mutate(
+  hired_personnel = !NOHIRED
+)
+```
+
+#### What is the distribution of climbing status across different mountains ranges?
+```{r}
+peaks %>% 
+  group_by(pstatus, himal_range) %>% 
+  summarize(count = n()) %>% 
+  pivot_wider(
+    names_from = pstatus,
+    values_from  = count
+  ) %>% 
+  mutate(
+    total = Climbed + Unclimbed,
+    climbed_prop = Climbed/total,
+    himal_range = fct_reorder(himal_range, climbed_prop)
+  ) %>% 
+  arrange(desc(climbed_prop)) %>% 
+  ggplot(aes(himal_range, climbed_prop))+
+  geom_col()+
+  coord_flip()+
+  labs(x = "Mountain Ranges",
+       y = "Climbed/Total Expeditions",
+       title = "Distribution of climbing status across different mountain ranges.")+
+  theme_minimal()
+
+```
+
+#### Which mountain range has the highest average peak height?
+
+```{r}
+
+peaks %>% 
+  group_by(himal_range) %>% 
+  summarize(
+    avg_peak_height = mean(peak_height)
+  )
+```
+
+#### Distribution of peak heights for peaks that are closed vs those that are open.
+
+```{r}
+peaks %>% 
+ group_by(open) %>% 
+ ggplot() +
+  geom_density(aes(peak_height, col = open))+
+  labs(
+    title = "Distribution of peak heights by the open/closed status",
+    x = "Peak height",
+    y  = "Density"
+  )+
+  theme_minimal()
+```
+
+#### Which climbing routes have the highest success rates?
+
+```{r}
+
+total <- length(exped$success1)
+
+#For route 1.
+
+#Another way I may have learned just now.
+success_rate1 <- exped %>% 
+  summarize(sum(success1/n())) %>% 
+  pull()
+
+# For route 2:
+
+success_rate2 <- exped %>% filter(!is.na(route2)) %>% 
+  summarize(sum(success2)/n()) %>% 
+  pull()
+
+success_rate2
+
+# There must be a better way to do this but for now this is it.
+
+```
+
+#### How does the use of oxygen affect summit success rates?
+```{r}
+exped %>% count(O2USED, O2NONE)
+```
+
+Common logical sense would imply !O2USED = O2NONE. But, looking at the counts, there are 10 observations where both O2USED and O2NONE is false. This doesn's make any sense so I removing these rows.
+```{r}
+oxy <- exped %>% filter(O2USED == TRUE | O2NONE == TRUE) %>% 
+  mutate(o2used = O2USED)
+
+```
+We may have to make a little contingency table. So, I want the success rate by oxygen status i.e. success rate when oxygen == 1 and success rate when oxygen  == 0.
+
+```{r}
+# This is for route 1.
+oxy_success <- oxy %>% filter(o2used == TRUE) %>% 
+  summarise(sum(success1)/n()) %>% pull()
+
+nooxy_success <- oxy %>% filter(o2used == FALSE) %>% 
+  summarise(sum(success1)/n()) %>% pull()
+
+tibble(category = c("Oxygen Used", "Oxygen Not Used")
+       ,value = c(oxy_success, nooxy_success)) %>% 
+  ggplot(aes(category, value))+
+  geom_col(fill = "skyblue", col = 1, width = 0.5) +
+  geom_label(aes(label = round(value,2)), vjust = -0.5) + 
+  theme_minimal()+
+  ylim(0, 1) +
+  labs(y = "Success Rates",
+       x = "Status of Oxygen Usage",
+       title = "Difference in success rates of mountain climbinng by oxygen usage.")
+
+
+```
+
+#### Are expeditions with no hired personnel associated with higher or lower death rates?
+To calculate death rates, first total = number of members + number of hired members. And total deaths = member deaths + hired personnel deaths.
+```{r}
+exped <- exped %>% mutate(
+  total_members = TOTMEMBERS + TOTHIRED,
+  total_deaths = MDEATHS + HDEATHS,
+  prop_deaths = total_deaths/ total_members
+)
+
+exped %>% group_by(hired_personnel) %>% 
+  summarise(deaths = sum(total_deaths))
+
+exped %>% group_by(hired_personnel) %>% 
+  summarise(sum(total_deaths)/n())
+
+```
+Expeditions with hired personnel are associated with higher deaths. The mechanism and the cause of this can be manifold.
+ 
